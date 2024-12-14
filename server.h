@@ -12,14 +12,12 @@ public:
     explicit Server(QObject *parent = nullptr);
     bool Connect(int port);
     bool SendMessageToClient(QString msg);
-    bool IsClientConnected();
     ~Server();
 public slots:
     void OnNewConnection();
 private:
     QTcpServer *pServer_;
     QTcpSocket *pSocket_;
-    bool client_connected_;
 };
 
 #endif // SERVER_H

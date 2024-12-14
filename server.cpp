@@ -7,11 +7,12 @@
 #include <QFile>
 #include <QCoreApplication>
 #include <QDir>
+#include <QUrlQuery>
+
 Server::Server(QObject *parent)
     : QObject{parent} {
     setObjectName("Server");
     pServer_ = new QTcpServer(this);
-    client_connected_ = false;
 }
 
 bool Server::Connect(int port) {
@@ -36,25 +37,37 @@ void Server::OnNewConnection() {
     if (pSocket_ != nullptr && pSocket_->isOpen()) {
 
         connect(pSocket_, &QTcpSocket::readyRead, this, [this]() {
-            qInfo() << "Server has recieved : ";
+
             QByteArray data = pSocket_->readAll();
-            qInfo() << "Server has recieved : " << data.trimmed() << ", From the client";
+
+            QString str_data = data;
+            int message_idx = str_data.indexOf("message");
+
+            if(message_idx != -1) {
+                QString extracted_message = str_data.mid(message_idx + QString("message").length() + 1);
+                qDebug() << "Received from client:" << extracted_message;
+                if (extracted_message == "exit") {
+                    QThread::currentThread()->quit();
+                    pSocket_->deleteLater();
+                    QThread::currentThread()->deleteLater();
+                    QCoreApplication::quit();
+                }
+            }else {
+                qDebug() << "Received from client:" << data;
+            }
         });
 
         connect(pSocket_, &QTcpSocket::disconnected, this, [this]() {
             qInfo() << "Clinet is disconnected";
-            pSocket_->deleteLater();
         });
 
-        QString current_path = QCoreApplication::applicationDirPath();
+
         QDir working_dir = QDir::current();
         working_dir.cd("../../");
 
+        QString html_file_path =  working_dir.absolutePath() + QDir::separator() + "index.html";
 
-        qInfo() << " QDir : "<< working_dir.absolutePath();
-        QString index_path =  working_dir.absolutePath() + QDir::separator() + "index.html";
-        qInfo() << "index path location: " << index_path;
-        QFile file(index_path);
+        QFile file(html_file_path);
         if (file.open(QFile::ReadOnly)) {
             QByteArray data = file.readAll();
             file.close();
@@ -67,13 +80,11 @@ void Server::OnNewConnection() {
                 data;
 
             pSocket_->write(httpResponse.toUtf8());
-            qInfo() << "html has beed sent successfully";
             pSocket_->flush();
         }else{
             qInfo() << "Cannot Open Html file. Error messasge: " << file.errorString();
         }
 
-        client_connected_ = true;
         return;
     }
     qInfo() << "There is no pending connection";
@@ -87,10 +98,6 @@ bool Server::SendMessageToClient(QString msg) {
     }
     qInfo() << "Socket is not Oppend";
     return false;
-}
-
-bool Server::IsClientConnected() {
-    return client_connected_;
 }
 
 Server::~Server() {

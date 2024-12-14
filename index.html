@@ -37,19 +37,16 @@
             font-weight: bold;
         }
 
-        nav ul li a:hover {
-            text-decoration: underline;
-        }
-
         main ul {
             list-style-type: none;
             padding: 0;
-            padding-left: 20px; 
+            padding-left: 20px;
         }
 
         main {
             padding: 2rem;
             text-align: center;
+            max-block-size: 90;
         }
 
         footer {
@@ -57,10 +54,9 @@
             color: #fff;
             text-align: center;
             padding: 1rem 0;
-            position: fixed;
-            bottom: 0;
-            width: 100%;
+            position: relative;
         }
+
     </style>
 </head>
 <body>
@@ -82,6 +78,49 @@
     <p>Our FOTA server enables secure and efficient over-the-air firmware updates for connected devices.
          It ensures fast, reliable, and safe delivery of updates, prioritizing security and version control.</p>
     
+
+    <h2>Send Message to Server</h2>    
+    <form id="messageForm">
+        <label for="message">Message:</label>
+        <input type="text" id="message" name="message"><br><br>
+        <button type="submit">Send</button>
+    </form>
+        
+    <script>
+         const form = document.getElementById('messageForm');
+            form.addEventListener('submit', (event) => {
+                event.preventDefault(); // Prevent default form submission
+
+                const message = document.getElementById('message').value;
+
+                // Create an XMLHttpRequest object
+                const xhr = new XMLHttpRequest();
+
+                // Define the request
+                xhr.open('POST', '/', true); // Assuming the server is listening on the root path ('/')
+                xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+
+                // Define the callback function
+                xhr.onreadystatechange = function() {
+                    if (xhr.readyState === XMLHttpRequest.DONE) {
+                        if (xhr.status === 200) {
+                            console.log('Message sent successfully!');
+                        } else {
+                            console.log('Error sending message:', xhr.status, xhr.statusText);
+                        }
+                    }
+                };
+
+                // Send the message data
+                xhr.send(`message=${message}`); 
+
+                // Clear the input field
+                document.getElementById('message').value = '';
+            });
+        </script>
+        
+
+
     <h2 id="about">About Us</h2>
     <p>We are a team of developers dedicated to building secure, 
         scalable, and efficient FOTA solutions for embedded devices. 
