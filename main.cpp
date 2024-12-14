@@ -7,7 +7,6 @@ int main(int argc, char *argv[])
     QCoreApplication a(argc, argv);
 
     Server myServer;
-    myServer.Connect(1234);
 
     QThread worker_thread;
     myServer.moveToThread(&worker_thread);
