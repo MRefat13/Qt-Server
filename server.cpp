@@ -9,17 +9,19 @@
 #include <QDir>
 #include <QUrlQuery>
 
-Server::Server(QObject *parent)
+Server::Server(QString html_page_path, QObject *parent)
     : QObject{parent} {
     setObjectName("Server");
-    pServer_ = new QTcpServer(this);
+    server_ = new QTcpServer(this);
+    html_page_path_ = html_page_path;
 }
 
 bool Server::Connect(int port) {
-    if (pServer_->listen(QHostAddress::Any, port) == true) {
+    //-- 1] Listent to a specific post and for any IP
+    if (server_->listen(QHostAddress::Any, port) == true) {
         qInfo() << "Server listening on port : " << port;
-
-        connect(pServer_, &QTcpServer::newConnection, this, &Server::OnNewConnection);
+        //-- 2]  Connect the `newConnection` signal to the `OnNewConnection` slot of the `Server`. 
+        connect(server_, &QTcpServer::newConnection, this, &Server::OnNewConnection);
 
         return true;
     }
@@ -28,72 +30,109 @@ bool Server::Connect(int port) {
 }
 
 void Server::OnNewConnection() {
-    pSocket_ = pServer_->nextPendingConnection();
+    //-- 1] Get the created socket & check if there is a socket has been created
+    socket_ = server_->nextPendingConnection();
+    if (socket_ != nullptr && socket_->isOpen()) {
+        //-- 2] // Connect the `readyRead` signal to the `OnReadyRead` slot of the `Server`.  
+        connect(socket_, &QTcpSocket::readyRead, this, &Server::OnReadyRead);
 
-    if (!pSocket_->waitForConnected(300)) {
-        qInfo() << "[Server] Cannot connect to the server socket";
-    }
-
-    if (pSocket_ != nullptr && pSocket_->isOpen()) {
-
-        connect(pSocket_, &QTcpSocket::readyRead, this, [this]() {
-
-            QByteArray data = pSocket_->readAll();
-
-            QString str_data = data;
-            int message_idx = str_data.indexOf("message");
-
-            if(message_idx != -1) {
-                QString extracted_message = str_data.mid(message_idx + QString("message").length() + 1);
-                qDebug() << "Received from client:" << extracted_message;
-                if (extracted_message == "exit") {
-                    QThread::currentThread()->quit();
-                    pSocket_->deleteLater();
-                    QThread::currentThread()->deleteLater();
-                    QCoreApplication::quit();
-                }
-            }else {
-                qDebug() << "Received from client:" << data;
-            }
+        //-- 3] Connect the `disconnected` signal of the socket to a lambda function. 
+        connect(socket_, &QTcpSocket::disconnected, this, [this]() {
+            qInfo() << "Client is disconnected";
         });
-
-        connect(pSocket_, &QTcpSocket::disconnected, this, [this]() {
-            qInfo() << "Clinet is disconnected";
-        });
-
-
-        QDir working_dir = QDir::current();
-        working_dir.cd("../../");
-
-        QString html_file_path =  working_dir.absolutePath() + QDir::separator() + "index.html";
-
-        QFile file(html_file_path);
-        if (file.open(QFile::ReadOnly)) {
-            QByteArray data = file.readAll();
-            file.close();
-
-            QString httpResponse =
-                "HTTP/1.1 2 00 OK\r\n"
-                "Content-Type: text/html\r\n"
-                "Content-Length: " + QByteArray::number(data.size()) + "\r\n"
-                                                    "Connection: close\r\n\r\n" +
-                data;
-
-            pSocket_->write(httpResponse.toUtf8());
-            pSocket_->flush();
-        }else{
-            qInfo() << "Cannot Open Html file. Error messasge: " << file.errorString();
-        }
 
         return;
     }
     qInfo() << "There is no pending connection";
 }
 
+void Server::OnReadyRead()  {
+    //-- 1] Read all the incoming data as a byte array
+    QByteArray data = socket_->readAll();
+
+    //-- 2] Convert data to a string
+    QString str_data = data;
+
+    //-- 3] Split data and display it line by line
+    QStringList str_list = str_data.split("\r\n");
+    qInfo() << "\n\n----------------------------------------------------";
+    qInfo() << "Server has received: \n";
+    foreach (QString str, str_list) {
+        qInfo() << str;
+    }
+
+    //-- 4] Parsing the incoming HTTP request
+
+    //-- 4.1] Case the Incoming HTTP request is GET...
+    if ( str_list[0] == QString("GET / HTTP/1.1")) {
+        SendHtmlFile();
+    }
+
+    //-- 4.2] Case the Incoming HTTP request is POST...
+    if ( str_list[0].contains("POST")) {
+        QString extracted_message = GetPostedMessage(str_data);
+        //-- 1] Display the extracted message
+        qDebug() << "Received message from client:" << extracted_message;
+
+        //-- 2] Check if the received message is exit
+        if (extracted_message == "exit") {
+            //-- 2.1] Quit From the App
+            socket_->deleteLater();
+            QCoreApplication::quit();
+        }
+
+        //-- 3] Send acknowledge to the client
+        QString http_response = "HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n";
+        SendMessageToClient(http_response);
+        socket_->disconnectFromHost();
+    }
+    qInfo() << "----------------------------------------------------\n\n";
+}
+
+void Server::SendHtmlFile() {
+    //-- 1] Create a QFile to handle the html file
+    QFile file(html_page_path_);
+
+    //-- 2] Check if we can open the file (IF file exists)
+    if (file.open(QFile::ReadOnly)) {
+        //-- 3] Read the content of the file as bytes
+        QByteArray data = file.readAll();
+
+        //-- 4] Construct the response
+        QString http_response =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/html\r\n"
+            "Content-Length: " + QByteArray::number(data.size()) + "\r\n"
+                                                "Connection: close\r\n\r\n" +
+            data;
+
+        //-- 5] Send HTTP response to the client
+        SendMessageToClient(http_response);
+
+        //-- 6] Close the file
+        file.close();
+    }else{
+        qInfo() << "Cannot Open Html file. Error message: " << file.errorString();
+    }
+}
+
+QString Server::GetPostedMessage(QString data) {
+    QString extracted_message = "";
+    //-- 1]  Get Index of the received message and check whether the received data contain message or not
+    int message_idx = data.indexOf("message");
+    if (message_idx > -1) {
+        //-- 2] Extract the received message
+        extracted_message = data.mid(message_idx + QString("message").length() + 1);
+    }
+    return extracted_message;
+}
+
 bool Server::SendMessageToClient(QString msg) {
-    if(pSocket_ != nullptr && pSocket_->isOpen()) {
-        pSocket_->write(msg.toUtf8());
-        pSocket_->flush(); // Send data immediately
+    //-- Ensure that the socket is created and oppend
+    if(socket_ != nullptr && socket_->isOpen()) {
+        socket_->write(msg.toUtf8());
+        //-- Flush(write) data immediately
+        socket_->flush();
         return true;
     }
     qInfo() << "Socket is not Oppend";
@@ -101,8 +140,8 @@ bool Server::SendMessageToClient(QString msg) {
 }
 
 Server::~Server() {
-    pServer_->close();
+    server_->close();
     qInfo() << "Connection is closed";
-    delete pServer_;
+    delete server_;
 }
 

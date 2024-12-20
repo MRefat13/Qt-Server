@@ -9,15 +9,19 @@ class Server : public QObject
 {
     Q_OBJECT
 public:
-    explicit Server(QObject *parent = nullptr);
+    explicit Server(QString html_page_path, QObject *parent = nullptr);
     bool Connect(int port);
     bool SendMessageToClient(QString msg);
     ~Server();
 public slots:
     void OnNewConnection();
+    void OnReadyRead();
 private:
-    QTcpServer *pServer_;
-    QTcpSocket *pSocket_;
+    QTcpServer *server_;
+    QTcpSocket *socket_;
+    QString html_page_path_;
+    void SendHtmlFile();
+    QString GetPostedMessage(QString data);
 };
 
 #endif // SERVER_H
